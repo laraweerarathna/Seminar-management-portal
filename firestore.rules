@@ -1,0 +1,36 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; }
+    function editor() { return signedIn() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'editor'); }
+
+    match /seminars/{id} {
+      allow read: if signedIn();
+      allow create, update: if editor();
+      allow delete: if admin();
+    }
+    match /contacts/{id} {
+      allow read: if signedIn();
+      allow create, update: if editor();
+      allow delete: if admin();
+    }
+    match /schools/{id} {
+      allow read: if signedIn();
+      allow create, update: if editor();
+      allow delete: if admin();
+    }
+    match /activities/{id} {
+      allow read: if signedIn();
+      allow create: if editor();
+      allow update, delete: if admin();
+    }
+    match /users/{userId} {
+      allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role == 'viewer';
+      allow read: if signedIn() && (request.auth.uid == userId || admin());
+      allow update: if admin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role);
+      allow delete: if admin();
+    }
+  }
+}
