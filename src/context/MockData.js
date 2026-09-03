@@ -32,7 +32,7 @@ export const initialContacts = [
   { id: 12, schoolName: 'Uduwa Kanishta Vidyalaya', contactPerson: 'Principal Madam', role: 'Principal (F)', phone: '076 692 6749' },
   { id: 13, schoolName: 'Amaragedara Kanishta Vidyalaya', contactPerson: 'Herath Madam', role: 'Contact (F)', phone: '070 742 4702' },
   { id: 14, schoolName: 'Bothalegama Maha Vidyalaya', contactPerson: 'Upendra Madam', role: 'Contact (F)', phone: '076 553 3845' },
-  { id: 15, schoolName: 'Deeyakaduwa Vidyartha Kanishta Vidyalaya', contactPerson: 'Principal', role: 'Principal', phone: '071 463 8599' },
+  { id: 15, schoolName: 'Diyakaduwa Vidyartha Kanishta Vidyalaya', contactPerson: 'Principal', role: 'Principal', phone: '071 463 8599' },
   { id: 16, schoolName: 'Delmalla Kanishta Vidyalaya', contactPerson: 'Principal Sir', role: 'Principal (M)', phone: '077 999 3339' },
   { id: 17, schoolName: 'Diwalakada Kanishta Vidyalaya', contactPerson: 'Deepika Madam', role: 'Contact (F)', phone: '071 578 1299' },
   { id: 18, schoolName: 'Govinna Maha Vidyalaya', contactPerson: 'Rupika Madam', role: 'Contact (F)', phone: '071 834 3606' },

@@ -2,35 +2,215 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function admin() { return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; }
-    function editor() { return signedIn() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'editor'); }
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function removedUserPath(userId) {
+      return /databases/$(database)/documents/removedUsers/$(userId);
+    }
+
+    function validRole(role) {
+      return role in ['viewer', 'editor', 'co_admin', 'admin'];
+    }
+
+    function activeMember() {
+      return signedIn()
+        && exists(userPath())
+        && validRole(get(userPath()).data.get('role', ''))
+        // Profiles created before the access flag existed remain active until
+        // the application migrates them to an explicit value.
+        && get(userPath()).data.get('approved', true) == true;
+    }
+
+    function admin() {
+      return activeMember() && get(userPath()).data.get('role', '') == 'admin';
+    }
+
+    function editor() {
+      return activeMember()
+        && get(userPath()).data.get('role', '') in ['editor', 'co_admin', 'admin'];
+    }
+
+    function coAdmin() {
+      return activeMember()
+        && get(userPath()).data.get('role', '') in ['co_admin', 'admin'];
+    }
+
+    function validNewProfile(userId) {
+      return signedIn()
+        && request.auth.uid == userId
+        && !exists(removedUserPath(userId))
+        && request.auth.token.email_verified == true
+        && request.resource.data.keys().hasAll([
+          'email', 'name', 'photoURL', 'role', 'approved', 'createdAt', 'lastSeenAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'email', 'name', 'photoURL', 'role', 'approved', 'createdAt', 'lastSeenAt'
+        ])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.email is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 160
+        && request.resource.data.photoURL is string
+        && request.resource.data.photoURL.size() <= 2048
+        && request.resource.data.role == 'viewer'
+        // Any verified Google user starts with read-only viewer access.
+        && request.resource.data.approved == true
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lastSeenAt == request.time;
+    }
+
+    function validSelfProfileUpdate(userId) {
+      return signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'email', 'name', 'photoURL', 'lastSeenAt'
+        ])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.email is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 160
+        && request.resource.data.photoURL is string
+        && request.resource.data.photoURL.size() <= 2048
+        && request.resource.data.lastSeenAt == request.time;
+    }
+
+    function validLegacySelfActivation(userId) {
+      return signedIn()
+        && request.auth.uid == userId
+        && !resource.data.keys().hasAny(['approved'])
+        && validRole(resource.data.role)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.approved == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved']);
+    }
+
+    function validAdminAccessUpdate(userId) {
+      return admin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'role', 'approved', 'accessUpdatedAt', 'accessUpdatedByUid', 'accessUpdatedBy'
+        ])
+        && validRole(request.resource.data.role)
+        && request.resource.data.approved is bool
+        && request.resource.data.accessUpdatedAt == request.time
+        && request.resource.data.accessUpdatedByUid == request.auth.uid
+        && request.resource.data.accessUpdatedBy is string
+        && request.resource.data.accessUpdatedBy.size() <= 160
+        // An administrator may not demote or block their own account.
+        && (userId != request.auth.uid || (
+          request.resource.data.role == 'admin'
+          && request.resource.data.approved == true
+        ));
+    }
+
+    function validRemovedUser(userId) {
+      return admin()
+        && request.resource.data.keys().hasAll([
+          'uid', 'email', 'name', 'removedAt', 'removedByUid', 'removedBy'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'name', 'removedAt', 'removedByUid', 'removedBy'
+        ])
+        && request.resource.data.uid == userId
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 320
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 160
+        && request.resource.data.removedAt == request.time
+        && request.resource.data.removedByUid == request.auth.uid
+        && request.resource.data.removedBy is string
+        && request.resource.data.removedBy.size() <= 160;
+    }
+
+    function validAdminUserRemoval(userId) {
+      return admin()
+        && userId != request.auth.uid
+        && resource.data.get('approved', true) == false
+        && existsAfter(removedUserPath(userId))
+        && getAfter(removedUserPath(userId)).data.uid == userId
+        && getAfter(removedUserPath(userId)).data.email == resource.data.get('email', '');
+    }
+
+    function validAuditEntry() {
+      return request.resource.data.keys().hasAll([
+          'entityType', 'entityId', 'action', 'label', 'createdAt', 'user', 'userUid'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'entityType', 'entityId', 'action', 'label', 'createdAt', 'user', 'userUid'
+        ])
+        && request.resource.data.entityType is string
+        && request.resource.data.entityId is string
+        && request.resource.data.action is string
+        && request.resource.data.label is string
+        && request.resource.data.user is string
+        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validActivityCreate() {
+      return validAuditEntry()
+        && request.resource.data.entityType in ['seminar', 'school'];
+    }
+
+    function validAdminActivityCreate() {
+      return validAuditEntry() && request.resource.data.entityType == 'user';
+    }
 
     match /seminars/{id} {
-      allow read: if signedIn();
+      allow read: if activeMember();
       allow create, update: if editor();
-      allow delete: if admin();
+      allow delete: if coAdmin();
     }
+
     match /contacts/{id} {
-      allow read: if signedIn();
+      allow read: if activeMember();
       allow create, update: if editor();
-      allow delete: if admin();
+      allow delete: if coAdmin();
     }
+
     match /schools/{id} {
-      allow read: if signedIn();
+      allow read: if activeMember();
       allow create, update: if editor();
-      allow delete: if admin();
+      allow delete: if coAdmin();
     }
+
     match /activities/{id} {
-      allow read: if signedIn();
-      allow create: if editor();
-      allow update, delete: if admin();
+      allow read: if activeMember();
+      allow create: if editor() && validActivityCreate();
+      // Audit history is append-only, including for administrators.
+      allow update, delete: if false;
     }
+
+    match /adminActivities/{id} {
+      allow read: if admin();
+      allow create: if admin() && validAdminActivityCreate();
+      allow update, delete: if false;
+    }
+
     match /users/{userId} {
-      allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role == 'viewer';
-      allow read: if signedIn() && (request.auth.uid == userId || admin());
-      allow update: if admin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role);
-      allow delete: if admin();
+      allow create: if validNewProfile(userId);
+      allow get: if signedIn() && (request.auth.uid == userId || admin());
+      allow list: if admin();
+      allow update: if validSelfProfileUpdate(userId)
+        || validLegacySelfActivation(userId)
+        || validAdminAccessUpdate(userId);
+      // Only administrators may remove an already-blocked profile, and the
+      // permanent marker must be written in the same atomic operation.
+      allow delete: if validAdminUserRemoval(userId);
+    }
+
+    match /removedUsers/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || admin());
+      allow list: if admin();
+      allow create: if validRemovedUser(userId);
+      // Removal markers keep deleted profiles from silently returning as new
+      // viewers. They are intentionally immutable from the client.
+      allow update, delete: if false;
     }
   }
 }

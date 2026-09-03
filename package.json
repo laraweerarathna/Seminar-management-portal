@@ -7,13 +7,19 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --test tests/data-model.test.js",
+    "test:ui": "vitest run",
+    "test:ui:watch": "vitest",
+    "test:rules": "npx --yes firebase-tools@15.29.0 emulators:exec --only firestore \"node --test tests/firestore.rules.test.js\"",
+    "test:all": "npm run test && npm run test:ui && npm run test:rules",
+    "deploy:security-rules": "npx --yes firebase-tools@15.29.0 deploy --only firestore:rules,database",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
-    "firebase": "^12.17.0",
+    "firebase": "^12.18.0",
     "lucide-react": "^1.28.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -21,6 +27,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -29,6 +39,8 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "gh-pages": "^6.3.0",
     "globals": "^17.4.0",
-    "vite": "^8.0.1"
+    "jsdom": "^29.1.1",
+    "vite": "^8.0.1",
+    "vitest": "^4.1.11"
   }
 }
