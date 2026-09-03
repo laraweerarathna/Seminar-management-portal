@@ -26,8 +26,6 @@ export default function Layout() {
     <section className="portal-state error" role="alert"><AlertTriangle size={32} /><h1>We couldn’t load the portal</h1><p>{dataError}</p><button className="btn btn-secondary" onClick={() => window.location.reload()}>Try again</button></section>
   ) : !approved ? (
     <section className="portal-state blocked-access" role="status"><ShieldAlert size={34} /><h1>Access blocked</h1><p><strong>{user.email}</strong> is signed in, but an administrator has blocked this account from viewing portal data.</p><button className="btn btn-secondary" onClick={logOut}><LogOut size={17} />Sign out</button></section>
-  ) : dataLoading ? (
-    <section className="portal-state" aria-live="polite"><LoaderCircle className="spin" size={30} /><h1>Loading portal data</h1><p>Fetching the latest seminar information…</p></section>
   ) : (
     <Suspense fallback={<section className="portal-state" aria-live="polite"><LoaderCircle className="spin" size={30} /><h1>Loading this page</h1><p>Preparing the selected section…</p></section>}>
       <Outlet />
@@ -55,7 +53,8 @@ export default function Layout() {
           {user ? <><div className="account-avatar">{(user.displayName || user.email || '?').slice(0, 1)}</div><div><strong>{user.displayName || 'Signed-in user'}</strong><span>{approved ? roleLabels[role] || 'Viewer' : 'Blocked'}</span></div><button onClick={logOut} title="Sign out"><LogOut size={16} /></button></> : <button className="sign-in-button" disabled={signingIn} onClick={signIn}><LogIn size={16} />{signingIn ? 'Signing in…' : 'Sign in with Google'}</button>}
         </div>
       </aside>
-      <main className="main-content">
+      <main className="main-content" aria-busy={approved && dataLoading}>
+        {approved && dataLoading && !dataError && <aside className="data-sync-notice" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><p><strong>Syncing the latest records</strong><span>You can use the portal while the seminar and school data finishes loading.</span></p></aside>}
         {approved && !dataLoading && !dataError && moreDataNames.length > 0 && <aside className="data-window-notice" aria-label="Additional records available"><Database size={18} /><p><strong>More records are available.</strong><span>The initial view is capped for faster loading. Load the next page of {moreDataNames.join(', ')}; editing and complete exports resume after every page is loaded.</span></p><button type="button" className="btn btn-secondary" onClick={loadMoreData} disabled={loadingMoreData}>{loadingMoreData ? 'Loading…' : 'Load more records'}</button></aside>}
         {portalContent}
       </main>

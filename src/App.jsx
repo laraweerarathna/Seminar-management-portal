@@ -1,8 +1,8 @@
 import React, { lazy, useCallback, useRef, useState, useEffect } from 'react';
 import { HashRouter, Navigate, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
-import { auth, googleProvider } from './config/firebase';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import { auth } from './config/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { AppContext } from './context/AppContext';
 
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -194,12 +194,14 @@ function App() {
       return undefined;
     }
 
-    const waitingFor = new Set(['seminars', 'contacts', 'activities', 'schools']);
+    const waitingFor = new Set(['seminars', 'contacts', 'schools']);
+    let startActivitySubscription = () => {};
     const markLoaded = (name) => {
       waitingFor.delete(name);
       if (waitingFor.size === 0) {
         setDataLoading(false);
         setLoadingMoreData(false);
+        startActivitySubscription();
       }
     };
     const handleError = (name) => (error) => {
@@ -236,6 +238,19 @@ function App() {
           orderBy(documentId()),
           limitResults(collectionLimits[name] + 1),
         );
+        let activitySubscriptionStarted = false;
+        startActivitySubscription = () => {
+          if (!active || activitySubscriptionStarted) return;
+          activitySubscriptionStarted = true;
+          unsubscribers.push(onSnapshot(
+            query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limitResults(RECENT_ACTIVITY_LIMIT)),
+            snapshot => setActivities(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))),
+            error => {
+              console.error('Unable to load recent activity:', error);
+              setActivities([]);
+            },
+          ));
+        };
         unsubscribers.push(
           onSnapshot(boundedCollection('seminars'), snapshot => {
             applyPage('seminars', snapshot, setSeminars);
@@ -243,10 +258,6 @@ function App() {
           onSnapshot(boundedCollection('contacts'), snapshot => {
             applyPage('contacts', snapshot, setContacts);
           }, handleError('contacts')),
-          onSnapshot(query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limitResults(RECENT_ACTIVITY_LIMIT)), snapshot => {
-            setActivities(snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
-            markLoaded('activities');
-          }, handleError('activities')),
           onSnapshot(boundedCollection('schools'), snapshot => {
             applyPage('schools', snapshot, setSchoolNotes);
           }, handleError('schools')),
@@ -323,7 +334,8 @@ function App() {
     if (signingIn) return;
     setSigningIn(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { signInWithGooglePopup } = await import('./config/firebasePopup');
+      await signInWithGooglePopup(auth);
     } catch (error) {
       console.error('Sign-in failed:', error);
       const technicalMessage = String(error?.message || error || 'No additional details were provided.');

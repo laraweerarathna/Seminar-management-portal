@@ -59,4 +59,11 @@ describe('Layout access and progressive loading', () => {
     await user.click(screen.getByRole('button', { name: 'Load more records' }));
     expect(loadMoreData).toHaveBeenCalledOnce();
   });
+
+  it('keeps portal content available while the latest data syncs', () => {
+    renderLayout(contextFor({ dataLoading: true }));
+
+    expect(screen.getByText('Portal content')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Syncing the latest records');
+  });
 });
