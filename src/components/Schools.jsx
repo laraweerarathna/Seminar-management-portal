@@ -2,7 +2,7 @@ import React, { useContext, useMemo, useState } from 'react';
 import { Building2, CalendarDays, Phone, Save, Search, UsersRound } from 'lucide-react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { AppContext } from '../context/AppContext';
-import { db } from '../config/firebase';
+import { db } from '../config/firestore';
 import { buildSchoolDirectory, normalizeSchoolName, recordMatchesSchool } from '../utils/schools';
 import { formatPhoneNumber, phoneLink } from '../utils/phone';
 import PageHeader from './PageHeader';
@@ -61,14 +61,21 @@ export default function Schools() {
         archived: false,
         updatedAt: serverTimestamp(),
         updatedBy,
+        updatedByUid: user.uid,
       }, { merge: true });
       matchingContacts.forEach(contact => batch.set(doc(db, 'contacts', String(contact.id)), {
         schoolId,
         schoolName: selectedSchool.name,
+        updatedAt: serverTimestamp(),
+        updatedBy,
+        updatedByUid: user.uid,
       }, { merge: true }));
       matchingSeminars.forEach(seminar => batch.update(doc(db, 'seminars', String(seminar.id)), {
         schoolId,
         school: selectedSchool.name,
+        updatedAt: serverTimestamp(),
+        updatedBy,
+        updatedByUid: user.uid,
       }));
       const activityRef = doc(collection(db, 'activities'));
       batch.set(activityRef, {
@@ -110,7 +117,7 @@ export default function Schools() {
             }) : <p className="no-contacts">No contact saved yet.</p>}</div>
             <div><h3><CalendarDays size={17} />Seminars</h3><div className="profile-sessions"><strong>Planned ({planned.length})</strong>{planned.length ? planned.map(seminar => <span key={seminar.id}>{seminar.date1 || 'TBC'} · {seminar.title}</span>) : <small>No planned sessions.</small>}<strong>Past ({past.length})</strong>{past.length ? past.slice(0, 5).map(seminar => <span key={seminar.id}>{seminar.date1 || 'TBC'} · {seminar.title}</span>) : <small>No past sessions.</small>}</div></div>
           </div>
-          <div className="profile-notes"><div><span className="eyebrow accent">Internal notes</span><h3>Relationship notes</h3></div><label className="sr-only" htmlFor="relationship-note">Relationship notes</label><textarea id="relationship-note" value={note} disabled={!canEdit} onChange={event => { setNote(event.target.value); setNoteStatus(''); }} placeholder="Add context, follow-up notes, or preferences for this school..." />{canEdit && <div className="note-actions"><button onClick={saveNote} disabled={noteStatus === 'saving'} className="btn btn-primary"><Save size={16} />{noteStatus === 'saving' ? 'Saving…' : 'Save note'}</button><span className={noteStatus === 'error' || noteStatus === 'too-many' ? 'save-error' : 'save-success'} aria-live="polite">{noteStatus === 'saved' ? 'Saved' : noteStatus === 'error' ? 'Could not save the note.' : noteStatus === 'too-many' ? 'Too many linked records to update.' : ''}</span></div>}</div>
+          <div className="profile-notes"><div><span className="eyebrow accent">Internal notes</span><h3>Relationship notes</h3></div><label className="sr-only" htmlFor="relationship-note">Relationship notes</label><textarea id="relationship-note" maxLength={10000} value={note} disabled={!canEdit} onChange={event => { setNote(event.target.value); setNoteStatus(''); }} placeholder="Add context, follow-up notes, or preferences for this school..." />{canEdit && <div className="note-actions"><button onClick={saveNote} disabled={noteStatus === 'saving'} className="btn btn-primary"><Save size={16} />{noteStatus === 'saving' ? 'Saving…' : 'Save note'}</button><span className={noteStatus === 'error' || noteStatus === 'too-many' ? 'save-error' : 'save-success'} aria-live="polite">{noteStatus === 'saved' ? 'Saved' : noteStatus === 'error' ? 'Could not save the note.' : noteStatus === 'too-many' ? 'Too many linked records to update.' : ''}</span></div>}</div>
         </> : <div className="empty-state"><Building2 size={30} /><h3>Select a school</h3><p>Choose a school to see its profile.</p></div>}
       </section>
     </div>

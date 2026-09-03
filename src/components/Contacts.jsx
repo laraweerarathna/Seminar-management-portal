@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom';
 import { Edit2, Phone, Plus, Search, Star, Trash2, UserPlus, X } from 'lucide-react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { AppContext } from '../context/AppContext';
-import { db } from '../config/firebase';
+import { db } from '../config/firestore';
 import { buildSchoolDirectory, normalizeSchoolName } from '../utils/schools';
 import { formatPhoneInput, formatPhoneNumber, isValidPhoneNumber, phoneDigits, phoneLink } from '../utils/phone';
 import PageHeader from './PageHeader';
 import ConfirmDialog from './ConfirmDialog';
+
+const MAX_CONTACTS_PER_SCHOOL = 5;
 
 const deduplicatePeople = (people) => {
   const seen = new Set();
@@ -69,17 +71,22 @@ export default function Contacts() {
     const schoolName = formData.schoolName.trim().replace(/\s+/g, ' ');
     const validationErrors = {};
     if (!schoolName) validationErrors.schoolName = 'Enter a school name.';
+    else if (schoolName.length > 300) validationErrors.schoolName = 'Keep the school name under 300 characters.';
+    if (formData.people.length > MAX_CONTACTS_PER_SCHOOL) validationErrors.general = `Add no more than ${MAX_CONTACTS_PER_SCHOOL} contacts per school.`;
 
     const cleanedPeople = [];
     for (let index = 0; index < formData.people.length; index += 1) {
       const person = formData.people[index];
       const name = String(person.name || '').trim();
+      const role = String(person.role || '').trim();
       const normalizedPhone = formatPhoneNumber(person.phone);
       if (!name) validationErrors[`person-${index}-name`] = `Enter a name for contact ${index + 1}.`;
+      else if (name.length > 160) validationErrors[`person-${index}-name`] = 'Keep the contact name under 160 characters.';
+      if (role.length > 160) validationErrors[`person-${index}-role`] = 'Keep the role under 160 characters.';
       if (!isValidPhoneNumber(person.phone)) validationErrors[`person-${index}-phone`] = 'Enter a 10-digit phone number.';
       cleanedPeople.push({
         name,
-        role: String(person.role || '').trim(),
+        role,
         phone: normalizedPhone,
         primary: Boolean(person.primary),
       });
@@ -108,6 +115,10 @@ export default function Contacts() {
     const deduplicatedPeople = deduplicatePeople([...(sameNameSchool?.people || []), ...cleanedPeople]);
     const selectedPrimaryIndex = Math.max(0, deduplicatedPeople.findIndex(person => person.primary));
     const peopleToSave = deduplicatedPeople.map((person, index) => ({ ...person, primary: index === selectedPrimaryIndex }));
+    if (peopleToSave.length > MAX_CONTACTS_PER_SCHOOL) {
+      setFormErrors({ general: `Add no more than ${MAX_CONTACTS_PER_SCHOOL} contacts per school.` });
+      return;
+    }
 
     const operationCount = affectedContacts.length + affectedSeminars.length + affectedSchoolRecords.length + 3;
     if (operationCount > 490) {
@@ -129,6 +140,7 @@ export default function Contacts() {
         archived: false,
         updatedAt: serverTimestamp(),
         updatedBy,
+        updatedByUid: user.uid,
       }, { merge: true });
 
       batch.set(doc(db, 'contacts', schoolId), {
@@ -139,6 +151,7 @@ export default function Contacts() {
         archived: false,
         updatedAt: serverTimestamp(),
         updatedBy,
+        updatedByUid: user.uid,
       });
 
       affectedContacts.forEach(contact => {
@@ -155,6 +168,7 @@ export default function Contacts() {
           mergedInto: schoolId,
           updatedAt: serverTimestamp(),
           updatedBy,
+          updatedByUid: user.uid,
         }, { merge: true });
       });
 
@@ -164,6 +178,7 @@ export default function Contacts() {
           school: schoolName,
           updatedAt: serverTimestamp(),
           updatedBy,
+          updatedByUid: user.uid,
         });
       });
 
@@ -174,6 +189,7 @@ export default function Contacts() {
           mergedInto: schoolId,
           updatedAt: serverTimestamp(),
           updatedBy,
+          updatedByUid: user.uid,
         }, { merge: true });
       });
 
@@ -239,7 +255,7 @@ export default function Contacts() {
     }
   };
 
-  const addPerson = () => setFormData(current => ({
+  const addPerson = () => setFormData(current => current.people.length >= MAX_CONTACTS_PER_SCHOOL ? current : ({
     ...current,
     people: [...current.people, { name: '', role: '', phone: '', primary: current.people.length === 0 }],
   }));
@@ -329,7 +345,7 @@ export default function Contacts() {
               {formErrors.general && <p className="form-feedback error" role="alert">{formErrors.general}</p>}
               <div className="form-group">
                 <label htmlFor="school-name">School name</label>
-                <input id="school-name" required autoFocus type="text" className="form-input" value={formData.schoolName} aria-invalid={Boolean(formErrors.schoolName)} aria-describedby={formErrors.schoolName ? 'school-name-error' : undefined} onChange={event => { setFormData(current => ({ ...current, schoolName: event.target.value })); setFormErrors(current => ({ ...current, schoolName: '' })); }} />
+                <input id="school-name" required autoFocus type="text" maxLength={300} className="form-input" value={formData.schoolName} aria-invalid={Boolean(formErrors.schoolName)} aria-describedby={formErrors.schoolName ? 'school-name-error' : undefined} onChange={event => { setFormData(current => ({ ...current, schoolName: event.target.value })); setFormErrors(current => ({ ...current, schoolName: '' })); }} />
                 {formErrors.schoolName && <small className="field-error" id="school-name-error">{formErrors.schoolName}</small>}
               </div>
 
@@ -339,15 +355,15 @@ export default function Contacts() {
                 {formData.people.map((person, index) => (
                   <div key={index} className="contact-form-card">
                     <button type="button" onClick={() => removePerson(index)} className="icon-action remove-contact" aria-label={`Remove contact ${index + 1}`}><X size={18} /></button>
-                    <div className="form-group"><label htmlFor={`contact-name-${index}`}>Name</label><input id={`contact-name-${index}`} required type="text" className="form-input" value={person.name} aria-invalid={Boolean(formErrors[`person-${index}-name`])} aria-describedby={formErrors[`person-${index}-name`] ? `contact-name-${index}-error` : undefined} onChange={event => updatePerson(index, 'name', event.target.value)} />{formErrors[`person-${index}-name`] && <small className="field-error" id={`contact-name-${index}-error`}>{formErrors[`person-${index}-name`]}</small>}</div>
+                    <div className="form-group"><label htmlFor={`contact-name-${index}`}>Name</label><input id={`contact-name-${index}`} required type="text" maxLength={160} className="form-input" value={person.name} aria-invalid={Boolean(formErrors[`person-${index}-name`])} aria-describedby={formErrors[`person-${index}-name`] ? `contact-name-${index}-error` : undefined} onChange={event => updatePerson(index, 'name', event.target.value)} />{formErrors[`person-${index}-name`] && <small className="field-error" id={`contact-name-${index}-error`}>{formErrors[`person-${index}-name`]}</small>}</div>
                     <label className="primary-check"><input type="radio" name="primary-contact" checked={person.primary || false} onChange={() => setPrimary(index)} />Primary contact for this school</label>
                     <div className="form-grid">
-                      <div className="form-group"><label htmlFor={`contact-role-${index}`}>Role</label><input id={`contact-role-${index}`} type="text" className="form-input" placeholder="e.g. Principal, math teacher" value={person.role} onChange={event => updatePerson(index, 'role', event.target.value)} /></div>
+                      <div className="form-group"><label htmlFor={`contact-role-${index}`}>Role</label><input id={`contact-role-${index}`} type="text" maxLength={160} className="form-input" placeholder="e.g. Principal, math teacher" value={person.role} aria-invalid={Boolean(formErrors[`person-${index}-role`])} aria-describedby={formErrors[`person-${index}-role`] ? `contact-role-${index}-error` : undefined} onChange={event => updatePerson(index, 'role', event.target.value)} />{formErrors[`person-${index}-role`] && <small className="field-error" id={`contact-role-${index}-error`}>{formErrors[`person-${index}-role`]}</small>}</div>
                       <div className="form-group"><label htmlFor={`contact-phone-${index}`}>Phone number</label><input id={`contact-phone-${index}`} required inputMode="numeric" autoComplete="tel" type="tel" maxLength={12} className="form-input" placeholder="071 234 5678" value={person.phone} aria-invalid={Boolean(formErrors[`person-${index}-phone`])} aria-describedby={formErrors[`person-${index}-phone`] ? `contact-phone-${index}-error` : undefined} onChange={event => updatePerson(index, 'phone', formatPhoneInput(event.target.value))} />{formErrors[`person-${index}-phone`] && <small className="field-error" id={`contact-phone-${index}-error`}>{formErrors[`person-${index}-phone`]}</small>}</div>
                     </div>
                   </div>
                 ))}
-                <button type="button" onClick={addPerson} className="btn btn-secondary add-contact-button"><UserPlus size={16} />{formData.people.length ? 'Add another person' : 'Add contact person'}</button>
+                <button type="button" onClick={addPerson} disabled={formData.people.length >= MAX_CONTACTS_PER_SCHOOL} className="btn btn-secondary add-contact-button"><UserPlus size={16} />{formData.people.length >= MAX_CONTACTS_PER_SCHOOL ? 'Contact limit reached' : formData.people.length ? 'Add another person' : 'Add contact person'}</button>
               </div>
 
               <div className="modal-actions"><button type="button" className="btn btn-secondary" onClick={handleCloseModal} disabled={saving}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save school'}</button></div>

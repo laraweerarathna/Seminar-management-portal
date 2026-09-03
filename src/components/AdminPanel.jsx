@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Activity, DatabaseBackup, Eye, History, Pencil, ShieldCheck, Trash2, UsersRound } from 'lucide-react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { AppContext } from '../context/AppContext';
-import { db } from '../config/firebase';
+import { db } from '../config/firestore';
 import UserAccess from './UserAccess';
 import PageHeader from './PageHeader';
 

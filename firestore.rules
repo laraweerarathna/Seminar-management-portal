@@ -136,6 +136,270 @@ service cloud.firestore {
         && getAfter(removedUserPath(userId)).data.email == resource.data.get('email', '');
     }
 
+    function validRequiredText(value, maximum) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= maximum;
+    }
+
+    function validOptionalText(value, maximum) {
+      return value is string && value.size() <= maximum;
+    }
+
+    function validWriteMetadata(data) {
+      return data.updatedAt == request.time
+        && validRequiredText(data.updatedBy, 320)
+        && data.updatedByUid == request.auth.uid;
+    }
+
+    function validDate(value) {
+      return value is string
+        && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])$');
+    }
+
+    function validOptionalDate(value) {
+      return value == '' || validDate(value);
+    }
+
+    function validTime(value) {
+      return value is string
+        && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
+    function validHttpUrl(value) {
+      return value is string
+        && value.size() <= 2048
+        && value.matches('^https?://.+$');
+    }
+
+    function validOptionalHttpUrl(value) {
+      return value == '' || validHttpUrl(value);
+    }
+
+    function validCount(value) {
+      return (value is int && value >= 0 && value <= 999999)
+        || (value is string && (value == '' || value.matches('^[0-9]{1,6}$')));
+    }
+
+    function validPerson(person) {
+      return person is map
+        && person.keys().hasAll(['name', 'role', 'phone', 'primary'])
+        && person.keys().hasOnly(['name', 'role', 'phone', 'primary'])
+        && validRequiredText(person.name, 160)
+        && validOptionalText(person.role, 160)
+        && person.phone is string
+        && person.phone.matches('^0[0-9]{2} [0-9]{3} [0-9]{4}$')
+        && person.primary is bool;
+    }
+
+    function validPersonAt(people, index) {
+      return people.size() <= index || validPerson(people[index]);
+    }
+
+    function validPeople(people) {
+      return people is list
+        && people.size() <= 5
+        && validPersonAt(people, 0)
+        && validPersonAt(people, 1)
+        && validPersonAt(people, 2)
+        && validPersonAt(people, 3)
+        && validPersonAt(people, 4);
+    }
+
+    function validContactBase(data) {
+      return data.keys().hasAll([
+          'schoolId', 'schoolName', 'updatedAt', 'updatedBy', 'updatedByUid'
+        ])
+        && data.keys().hasOnly([
+          'id', 'schoolId', 'schoolName', 'people', 'archived', 'mergedInto',
+          'contactPerson', 'role', 'phone', 'phone2', 'updatedAt', 'updatedBy',
+          'updatedByUid'
+        ])
+        && validRequiredText(data.schoolId, 200)
+        && validRequiredText(data.schoolName, 300)
+        && (!data.keys().hasAny(['id']) || data.id is string || data.id is int)
+        && data.get('people', []) is list
+        && data.get('archived', false) is bool
+        && validOptionalText(data.get('mergedInto', ''), 200)
+        && validOptionalText(data.get('contactPerson', ''), 160)
+        && validOptionalText(data.get('role', ''), 160)
+        && data.get('phone', '') is string
+        && data.get('phone2', '') is string
+        && validWriteMetadata(data);
+    }
+
+    function validContactCreate(id) {
+      return validContactBase(request.resource.data)
+        && request.resource.data.keys().hasAll(['id', 'people', 'archived'])
+        && request.resource.data.id == id
+        && request.resource.data.schoolId == id
+        && request.resource.data.archived == false
+        && validPeople(request.resource.data.people)
+        && (request.resource.data.get('phone', '') == ''
+          || request.resource.data.phone.matches('^0[0-9]{2} [0-9]{3} [0-9]{4}$'))
+        && (request.resource.data.get('phone2', '') == ''
+          || request.resource.data.phone2.matches('^0[0-9]{2} [0-9]{3} [0-9]{4}$'));
+    }
+
+    function validContactUpdate(id) {
+      return validContactBase(request.resource.data)
+        && (!resource.data.keys().hasAny(['id'])
+          || request.resource.data.keys().hasAny(['id']))
+        && (!resource.data.keys().hasAny(['people'])
+          || request.resource.data.keys().hasAny(['people']))
+        && (!resource.data.keys().hasAny(['archived'])
+          || request.resource.data.keys().hasAny(['archived']))
+        && (!request.resource.data.keys().hasAny(['id'])
+          || request.resource.data.id == id
+          || request.resource.data.id == resource.data.get('id', ''))
+        // Existing legacy fields may survive a school link/rename, but any
+        // newly supplied contact data must use the canonical schema.
+        && (validPeople(request.resource.data.get('people', []))
+          || request.resource.data.get('people', []) == resource.data.get('people', []))
+        && (request.resource.data.get('phone', '') == ''
+          || request.resource.data.phone.matches('^0[0-9]{2} [0-9]{3} [0-9]{4}$')
+          || request.resource.data.get('phone', '') == resource.data.get('phone', ''))
+        && (request.resource.data.get('phone2', '') == ''
+          || request.resource.data.phone2.matches('^0[0-9]{2} [0-9]{3} [0-9]{4}$')
+          || request.resource.data.get('phone2', '') == resource.data.get('phone2', ''))
+        && (request.resource.data.get('archived', false) == false
+          || validRequiredText(request.resource.data.get('mergedInto', ''), 200));
+    }
+
+    function validSchoolBase(data) {
+      return data.keys().hasAll(['name', 'archived', 'updatedAt', 'updatedBy', 'updatedByUid'])
+        && data.keys().hasOnly([
+          'schoolId', 'name', 'note', 'archived', 'mergedInto', 'updatedAt',
+          'updatedBy', 'updatedByUid'
+        ])
+        && validRequiredText(data.name, 300)
+        && (!data.keys().hasAny(['schoolId']) || validRequiredText(data.schoolId, 200))
+        && validOptionalText(data.get('note', ''), 10000)
+        && data.archived is bool
+        && validOptionalText(data.get('mergedInto', ''), 200)
+        && validWriteMetadata(data);
+    }
+
+    function validSchoolCreate(id) {
+      return validSchoolBase(request.resource.data)
+        && request.resource.data.keys().hasAll(['schoolId'])
+        && request.resource.data.schoolId == id
+        && request.resource.data.archived == false;
+    }
+
+    function validSchoolUpdate(id) {
+      return validSchoolBase(request.resource.data)
+        && (!resource.data.keys().hasAny(['schoolId'])
+          || request.resource.data.keys().hasAny(['schoolId']))
+        && (!request.resource.data.keys().hasAny(['schoolId'])
+          || request.resource.data.schoolId == id
+          || request.resource.data.schoolId == resource.data.get('schoolId', ''))
+        && (request.resource.data.archived == false
+          || validRequiredText(request.resource.data.get('mergedInto', ''), 200));
+    }
+
+    function validFollowUp(followUp) {
+      return followUp is map
+        && followUp.keys().hasAll(['text', 'done'])
+        && followUp.keys().hasOnly(['text', 'done'])
+        && validRequiredText(followUp.text, 500)
+        && followUp.done is bool;
+    }
+
+    function validFollowUpAt(followUps, index) {
+      return followUps.size() <= index || validFollowUp(followUps[index]);
+    }
+
+    function validFollowUps(followUps) {
+      return followUps is list
+        && followUps.size() <= 5
+        && validFollowUpAt(followUps, 0)
+        && validFollowUpAt(followUps, 1)
+        && validFollowUpAt(followUps, 2)
+        && validFollowUpAt(followUps, 3)
+        && validFollowUpAt(followUps, 4);
+    }
+
+    function validPhotoAt(photoLinks, index) {
+      return photoLinks.size() <= index || validHttpUrl(photoLinks[index]);
+    }
+
+    function validPhotoLinks(photoLinks) {
+      return photoLinks is list
+        && photoLinks.size() <= 5
+        && validPhotoAt(photoLinks, 0)
+        && validPhotoAt(photoLinks, 1)
+        && validPhotoAt(photoLinks, 2)
+        && validPhotoAt(photoLinks, 3)
+        && validPhotoAt(photoLinks, 4);
+    }
+
+    function validOutcomes(outcomes) {
+      return outcomes is map
+        && outcomes.keys().hasAll(['attendance', 'notes', 'photoLinks', 'followUps'])
+        && outcomes.keys().hasOnly(['attendance', 'notes', 'photoLinks', 'followUps'])
+        && validCount(outcomes.attendance)
+        && validOptionalText(outcomes.notes, 10000)
+        && validPhotoLinks(outcomes.photoLinks)
+        && validFollowUps(outcomes.followUps);
+    }
+
+    function validSeminarBase(data) {
+      return data.keys().hasAll([
+          'id', 'title', 'schoolId', 'school', 'date1', 'date2', 'startTime',
+          'endTime', 'status', 'grade10', 'grade11', 'locationLink',
+          'updatedAt', 'updatedBy', 'updatedByUid'
+        ])
+        && data.keys().hasOnly([
+          'id', 'title', 'schoolId', 'school', 'date1', 'date2', 'startTime',
+          'endTime', 'status', 'grade10', 'grade11', 'locationLink',
+          'studentCount', 'outcomes', 'details', 'updatedAt', 'updatedBy',
+          'updatedByUid'
+        ])
+        && (data.id is string || data.id is int)
+        && validRequiredText(data.title, 200)
+        && validRequiredText(data.schoolId, 200)
+        && validRequiredText(data.school, 300)
+        && validDate(data.date1)
+        && validOptionalDate(data.date2)
+        && validTime(data.startTime)
+        && validTime(data.endTime)
+        && data.status is string
+        && data.grade10 is bool
+        && data.grade11 is bool
+        && (data.grade10 || data.grade11)
+        && validOptionalHttpUrl(data.locationLink)
+        && validCount(data.get('studentCount', ''))
+        && validOptionalText(data.get('details', ''), 2000)
+        && (!data.keys().hasAny(['outcomes']) || data.outcomes is map)
+        && validWriteMetadata(data);
+    }
+
+    function validSeminarStatus(status) {
+      return status in ['draft', 'confirmed', 'completed', 'cancelled'];
+    }
+
+    function validSeminarCreate(id) {
+      return validSeminarBase(request.resource.data)
+        && request.resource.data.keys().hasAll(['studentCount', 'outcomes'])
+        && request.resource.data.id is string
+        && request.resource.data.id == id
+        && validSeminarStatus(request.resource.data.status)
+        && validOutcomes(request.resource.data.outcomes);
+    }
+
+    function validSeminarUpdate(id) {
+      return validSeminarBase(request.resource.data)
+        && (request.resource.data.id == id || request.resource.data.id == resource.data.id)
+        && (validSeminarStatus(request.resource.data.status)
+          || request.resource.data.status == resource.data.status)
+        // A legacy outcome map can remain untouched during a school rename;
+        // changing it requires the current validated shape.
+        && (!request.resource.data.keys().hasAny(['outcomes'])
+          || validOutcomes(request.resource.data.outcomes)
+          || request.resource.data.outcomes == resource.data.get('outcomes', null));
+    }
+
     function validAuditEntry() {
       return request.resource.data.keys().hasAll([
           'entityType', 'entityId', 'action', 'label', 'createdAt', 'user', 'userUid'
@@ -143,11 +407,11 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'entityType', 'entityId', 'action', 'label', 'createdAt', 'user', 'userUid'
         ])
-        && request.resource.data.entityType is string
-        && request.resource.data.entityId is string
-        && request.resource.data.action is string
-        && request.resource.data.label is string
-        && request.resource.data.user is string
+        && validRequiredText(request.resource.data.entityType, 40)
+        && validRequiredText(request.resource.data.entityId, 300)
+        && validRequiredText(request.resource.data.action, 120)
+        && validRequiredText(request.resource.data.label, 600)
+        && validRequiredText(request.resource.data.user, 320)
         && request.resource.data.userUid == request.auth.uid
         && request.resource.data.createdAt == request.time;
     }
@@ -163,19 +427,28 @@ service cloud.firestore {
 
     match /seminars/{id} {
       allow read: if activeMember();
-      allow create, update: if editor();
+      allow create, update: if editor() && (
+        (resource == null && validSeminarCreate(id))
+        || (resource != null && validSeminarUpdate(id))
+      );
       allow delete: if coAdmin();
     }
 
     match /contacts/{id} {
       allow read: if activeMember();
-      allow create, update: if editor();
+      allow create, update: if editor() && (
+        (resource == null && validContactCreate(id))
+        || (resource != null && validContactUpdate(id))
+      );
       allow delete: if coAdmin();
     }
 
     match /schools/{id} {
       allow read: if activeMember();
-      allow create, update: if editor();
+      allow create, update: if editor() && (
+        (resource == null && validSchoolCreate(id))
+        || (resource != null && validSchoolUpdate(id))
+      );
       allow delete: if coAdmin();
     }
 

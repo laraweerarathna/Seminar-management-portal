@@ -12,7 +12,7 @@ const firestore = vi.hoisted(() => ({
   update: vi.fn(),
 }));
 
-vi.mock('../../src/config/firebase', () => ({ db: {} }));
+vi.mock('../../src/config/firestore', () => ({ db: {} }));
 vi.mock('firebase/firestore', () => ({
   collection: vi.fn((_database, name) => ({ path: name })),
   doc: vi.fn((reference, ...parts) => parts.length

@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { Suspense, useContext } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { AlertTriangle, BarChart3, Building2, CalendarDays, Database, GraduationCap, LayoutDashboard, LoaderCircle, LogIn, LogOut, ShieldAlert, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
@@ -28,7 +28,11 @@ export default function Layout() {
     <section className="portal-state blocked-access" role="status"><ShieldAlert size={34} /><h1>Access blocked</h1><p><strong>{user.email}</strong> is signed in, but an administrator has blocked this account from viewing portal data.</p><button className="btn btn-secondary" onClick={logOut}><LogOut size={17} />Sign out</button></section>
   ) : dataLoading ? (
     <section className="portal-state" aria-live="polite"><LoaderCircle className="spin" size={30} /><h1>Loading portal data</h1><p>Fetching the latest seminar information…</p></section>
-  ) : <Outlet />;
+  ) : (
+    <Suspense fallback={<section className="portal-state" aria-live="polite"><LoaderCircle className="spin" size={30} /><h1>Loading this page</h1><p>Preparing the selected section…</p></section>}>
+      <Outlet />
+    </Suspense>
+  );
 
   return (
     <div className="app-shell">

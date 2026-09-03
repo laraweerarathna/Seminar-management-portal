@@ -52,6 +52,50 @@ const removedUserFields = (target = 'blocked', actor = 'admin') => ({
   removedBy: profiles[actor].name,
 });
 
+const validSeminar = (id = 'seminar-1', overrides = {}) => ({
+  id,
+  title: 'Mathematics',
+  schoolId: 'school-1',
+  school: 'Example School',
+  date1: '2026-09-10',
+  date2: '',
+  startTime: '07:30',
+  endTime: '15:00',
+  status: 'confirmed',
+  grade10: true,
+  grade11: false,
+  locationLink: '',
+  studentCount: '30',
+  outcomes: { attendance: '', notes: '', photoLinks: [], followUps: [] },
+  updatedAt: serverTimestamp(),
+  updatedBy: profiles.editor.name,
+  updatedByUid: 'editor',
+  ...overrides,
+});
+
+const validContact = (id = 'school-1', overrides = {}) => ({
+  id,
+  schoolId: id,
+  schoolName: 'Example School',
+  people: [{ name: 'Principal', role: 'Principal', phone: '071 234 5678', primary: true }],
+  archived: false,
+  updatedAt: serverTimestamp(),
+  updatedBy: profiles.editor.name,
+  updatedByUid: 'editor',
+  ...overrides,
+});
+
+const validSchool = (id = 'school-1', overrides = {}) => ({
+  schoolId: id,
+  name: 'Example School',
+  note: '',
+  archived: false,
+  updatedAt: serverTimestamp(),
+  updatedBy: profiles.editor.name,
+  updatedByUid: 'editor',
+  ...overrides,
+});
+
 before(async () => {
   testEnvironment = await initializeTestEnvironment({
     projectId,
@@ -72,7 +116,9 @@ beforeEach(async () => {
         createdAt,
         lastSeenAt: createdAt,
       })),
-      setDoc(doc(database, 'seminars', 'seminar-1'), { title: 'Mathematics', school: 'Example School' }),
+      setDoc(doc(database, 'seminars', 'seminar-1'), validSeminar()),
+      setDoc(doc(database, 'contacts', 'school-1'), validContact()),
+      setDoc(doc(database, 'schools', 'school-1'), validSchool()),
       setDoc(doc(database, 'activities', 'activity-1'), {
         entityType: 'seminar',
         entityId: 'seminar-1',
@@ -113,24 +159,46 @@ test('viewer can read data but cannot change it', async () => {
   const viewer = signedInDatabase('viewer');
 
   await assertSucceeds(getDoc(doc(viewer, 'seminars', 'seminar-1')));
-  await assertFails(setDoc(doc(viewer, 'seminars', 'seminar-2'), { title: 'Science' }));
-  await assertFails(updateDoc(doc(viewer, 'seminars', 'seminar-1'), { title: 'Changed' }));
+  await assertFails(setDoc(doc(viewer, 'seminars', 'seminar-2'), validSeminar('seminar-2', {
+    updatedBy: profiles.viewer.name,
+    updatedByUid: 'viewer',
+  })));
+  await assertFails(updateDoc(doc(viewer, 'seminars', 'seminar-1'), {
+    title: 'Changed',
+    updatedAt: serverTimestamp(),
+    updatedBy: profiles.viewer.name,
+    updatedByUid: 'viewer',
+  }));
   await assertFails(deleteDoc(doc(viewer, 'seminars', 'seminar-1')));
 });
 
 test('editor can create and update records but cannot delete them', async () => {
   const editor = signedInDatabase('editor');
 
-  await assertSucceeds(setDoc(doc(editor, 'seminars', 'seminar-2'), { title: 'Science' }));
-  await assertSucceeds(updateDoc(doc(editor, 'seminars', 'seminar-1'), { title: 'Advanced Mathematics' }));
+  await assertSucceeds(setDoc(doc(editor, 'seminars', 'seminar-2'), validSeminar('seminar-2', { title: 'Science' })));
+  await assertSucceeds(updateDoc(doc(editor, 'seminars', 'seminar-1'), {
+    title: 'Advanced Mathematics',
+    updatedAt: serverTimestamp(),
+    updatedBy: profiles.editor.name,
+    updatedByUid: 'editor',
+  }));
   await assertFails(deleteDoc(doc(editor, 'seminars', 'seminar-1')));
 });
 
 test('co-admin can manage operational records but cannot manage users', async () => {
   const coAdmin = signedInDatabase('coAdmin');
 
-  await assertSucceeds(setDoc(doc(coAdmin, 'seminars', 'seminar-2'), { title: 'Science' }));
-  await assertSucceeds(updateDoc(doc(coAdmin, 'seminars', 'seminar-1'), { title: 'Advanced Mathematics' }));
+  await assertSucceeds(setDoc(doc(coAdmin, 'seminars', 'seminar-2'), validSeminar('seminar-2', {
+    title: 'Science',
+    updatedBy: profiles.coAdmin.name,
+    updatedByUid: 'coAdmin',
+  })));
+  await assertSucceeds(updateDoc(doc(coAdmin, 'seminars', 'seminar-1'), {
+    title: 'Advanced Mathematics',
+    updatedAt: serverTimestamp(),
+    updatedBy: profiles.coAdmin.name,
+    updatedByUid: 'coAdmin',
+  }));
   await assertSucceeds(deleteDoc(doc(coAdmin, 'seminars', 'seminar-1')));
   await assertFails(getDocs(collection(coAdmin, 'users')));
   await assertFails(updateDoc(doc(coAdmin, 'users', 'blocked'), {
@@ -149,6 +217,125 @@ test('administrator can list users and delete portal records', async () => {
 
   await assertSucceeds(getDocs(collection(admin, 'users')));
   await assertSucceeds(deleteDoc(doc(admin, 'seminars', 'seminar-1')));
+});
+
+test('editor can write valid schools, contacts, and seminar outcomes', async () => {
+  const editor = signedInDatabase('editor');
+
+  await assertSucceeds(setDoc(doc(editor, 'schools', 'school-2'), validSchool('school-2', {
+    name: 'Second School',
+  })));
+  await assertSucceeds(setDoc(doc(editor, 'contacts', 'school-2'), validContact('school-2', {
+    schoolName: 'Second School',
+    people: Array.from({ length: 5 }, (_, index) => ({
+      name: `Contact ${index + 1}`,
+      role: 'Teacher',
+      phone: '071 234 5678',
+      primary: index === 0,
+    })),
+  })));
+  await assertSucceeds(setDoc(doc(editor, 'seminars', 'seminar-2'), validSeminar('seminar-2', {
+    schoolId: 'school-2',
+    school: 'Second School',
+    status: 'completed',
+    outcomes: {
+      attendance: '28',
+      notes: 'Delivered successfully.',
+      photoLinks: Array.from({ length: 5 }, (_, index) => `https://example.com/photos/${index + 1}`),
+      followUps: Array.from({ length: 5 }, (_, index) => ({ text: `Follow-up ${index + 1}`, done: false })),
+    },
+  })));
+});
+
+test('operational writes reject malformed fields and unexpected keys', async () => {
+  const editor = signedInDatabase('editor');
+
+  await assertFails(setDoc(doc(editor, 'seminars', 'bad-status'), validSeminar('bad-status', { status: 'published' })));
+  await assertFails(setDoc(doc(editor, 'seminars', 'extra-field'), validSeminar('extra-field', { injected: true })));
+  await assertFails(setDoc(doc(editor, 'seminars', 'bad-outcome-link'), validSeminar('bad-outcome-link', {
+    status: 'completed',
+    outcomes: { attendance: '20', notes: '', photoLinks: ['javascript:alert(1)'], followUps: [] },
+  })));
+  await assertFails(setDoc(doc(editor, 'contacts', 'bad-phone'), validContact('bad-phone', {
+    people: [{ name: 'Principal', role: '', phone: '0712345678', primary: true }],
+  })));
+  await assertFails(setDoc(doc(editor, 'schools', 'bad-note'), validSchool('bad-note', { note: 'x'.repeat(10001) })));
+  await assertFails(setDoc(doc(editor, 'schools', 'missing-metadata'), {
+    schoolId: 'missing-metadata',
+    name: 'Missing Metadata School',
+    archived: false,
+  }));
+});
+
+test('updates cannot corrupt valid operational records', async () => {
+  const editor = signedInDatabase('editor');
+  const metadata = { updatedAt: serverTimestamp(), updatedBy: profiles.editor.name, updatedByUid: 'editor' };
+
+  await assertFails(updateDoc(doc(editor, 'seminars', 'seminar-1'), { title: 'No audit metadata' }));
+  await assertFails(updateDoc(doc(editor, 'seminars', 'seminar-1'), {
+    title: 'Spoofed author',
+    ...metadata,
+    updatedByUid: 'admin',
+  }));
+  await assertFails(updateDoc(doc(editor, 'seminars', 'seminar-1'), { title: '', ...metadata }));
+  await assertFails(updateDoc(doc(editor, 'seminars', 'seminar-1'), { grade10: false, grade11: false, ...metadata }));
+  await assertFails(updateDoc(doc(editor, 'contacts', 'school-1'), {
+    people: [{ name: 'Principal', role: 'Principal', phone: '0712345678', primary: true }],
+    ...metadata,
+  }));
+  await assertFails(updateDoc(doc(editor, 'schools', 'school-1'), { archived: 'no', ...metadata }));
+});
+
+test('legacy records can be linked without permitting new legacy values', async () => {
+  await testEnvironment.withSecurityRulesDisabled(async context => {
+    const database = context.firestore();
+    await Promise.all([
+      setDoc(doc(database, 'contacts', 'legacy-contact'), {
+        id: 42,
+        schoolName: 'Legacy School',
+        contactPerson: 'Principal',
+        role: 'Principal',
+        phone: '0712345678',
+      }),
+      setDoc(doc(database, 'seminars', 'legacy-seminar'), {
+        id: 42,
+        title: 'Legacy Seminar',
+        school: 'Legacy School',
+        date1: '2026-09-20',
+        date2: '',
+        startTime: '07:30',
+        endTime: '15:00',
+        status: 'upcoming',
+        grade10: true,
+        grade11: true,
+        locationLink: '',
+        details: 'Student count: 30',
+      }),
+      setDoc(doc(database, 'schools', 'legacy-school'), { name: 'Legacy School', note: '' }),
+    ]);
+  });
+
+  const editor = signedInDatabase('editor');
+  const metadata = { updatedAt: serverTimestamp(), updatedBy: profiles.editor.name, updatedByUid: 'editor' };
+  await assertSucceeds(updateDoc(doc(editor, 'contacts', 'legacy-contact'), {
+    schoolId: 'legacy-school',
+    schoolName: 'Legacy School',
+    ...metadata,
+  }));
+  await assertSucceeds(updateDoc(doc(editor, 'seminars', 'legacy-seminar'), {
+    schoolId: 'legacy-school',
+    school: 'Legacy School',
+    ...metadata,
+  }));
+  await assertSucceeds(updateDoc(doc(editor, 'schools', 'legacy-school'), {
+    schoolId: 'legacy-school',
+    archived: false,
+    ...metadata,
+  }));
+  await assertFails(updateDoc(doc(editor, 'contacts', 'legacy-contact'), {
+    phone: '0712345679',
+    ...metadata,
+  }));
 });
 
 test('a verified user can only create their own active viewer profile', async () => {

@@ -2,7 +2,7 @@ import React, { useContext, useMemo, useState } from 'react';
 import { Check, ShieldCheck, Trash2, UserRoundCheck, UserRoundX, UsersRound } from 'lucide-react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { AppContext } from '../context/AppContext';
-import { db } from '../config/firebase';
+import { db } from '../config/firestore';
 import ConfirmDialog from './ConfirmDialog';
 
 const roles = [

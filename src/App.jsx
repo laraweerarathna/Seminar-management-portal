@@ -1,16 +1,17 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { lazy, useCallback, useRef, useState, useEffect } from 'react';
 import { HashRouter, Navigate, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
-import Dashboard from './components/Dashboard';
-import Contacts from './components/Contacts';
-import CalendarView from './components/CalendarView';
-import { auth, db, googleProvider } from './config/firebase';
-import { collection, documentId, onSnapshot, getDoc, doc, limit as limitResults, orderBy, query, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { auth, googleProvider } from './config/firebase';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import { AppContext } from './context/AppContext';
-import Reports from './components/Reports';
-import Schools from './components/Schools';
-import AdminPanel from './components/AdminPanel';
+
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const Contacts = lazy(() => import('./components/Contacts'));
+const CalendarView = lazy(() => import('./components/CalendarView'));
+const Reports = lazy(() => import('./components/Reports'));
+const Schools = lazy(() => import('./components/Schools'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const loadFirestore = () => import('./config/firestore');
 
 const authErrorMessages = {
   'auth/account-exists-with-different-credential': 'This email is already linked to another sign-in method.',
@@ -94,6 +95,8 @@ function App() {
       }
 
       try {
+        const { db, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } = await loadFirestore();
+        if (!active || sequence !== authSequence) return;
         const profile = doc(db, 'users', currentUser.uid);
         const removedProfile = doc(db, 'removedUsers', currentUser.uid);
         const [existingProfile, removedAccount] = await Promise.all([
@@ -206,11 +209,6 @@ function App() {
       setLoadingMoreData(false);
     };
 
-    const boundedCollection = (name) => query(
-      collection(db, name),
-      orderBy(documentId()),
-      limitResults(collectionLimits[name] + 1),
-    );
     const applyPage = (name, snapshot, setter) => {
       const maximum = collectionLimits[name];
       setHasMoreData(current => ({ ...current, [name]: snapshot.docs.length > maximum }));
@@ -218,25 +216,50 @@ function App() {
       markLoaded(name);
     };
 
-    const unsubSem = onSnapshot(boundedCollection('seminars'), snapshot => {
-      applyPage('seminars', snapshot, setSeminars);
-    }, handleError('seminars'));
-    const unsubCon = onSnapshot(boundedCollection('contacts'), snapshot => {
-      applyPage('contacts', snapshot, setContacts);
-    }, handleError('contacts'));
-    const unsubActivities = onSnapshot(query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limitResults(RECENT_ACTIVITY_LIMIT)), snapshot => {
-      setActivities(snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
-      markLoaded('activities');
-    }, handleError('activities'));
-    const unsubSchoolNotes = onSnapshot(boundedCollection('schools'), snapshot => {
-      applyPage('schools', snapshot, setSchoolNotes);
-    }, handleError('schools'));
+    let active = true;
+    const unsubscribers = [];
+    const subscribe = async () => {
+      try {
+        const {
+          db,
+          collection,
+          documentId,
+          limitResults,
+          onSnapshot,
+          orderBy,
+          query,
+        } = await loadFirestore();
+        if (!active) return;
+
+        const boundedCollection = (name) => query(
+          collection(db, name),
+          orderBy(documentId()),
+          limitResults(collectionLimits[name] + 1),
+        );
+        unsubscribers.push(
+          onSnapshot(boundedCollection('seminars'), snapshot => {
+            applyPage('seminars', snapshot, setSeminars);
+          }, handleError('seminars')),
+          onSnapshot(boundedCollection('contacts'), snapshot => {
+            applyPage('contacts', snapshot, setContacts);
+          }, handleError('contacts')),
+          onSnapshot(query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limitResults(RECENT_ACTIVITY_LIMIT)), snapshot => {
+            setActivities(snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+            markLoaded('activities');
+          }, handleError('activities')),
+          onSnapshot(boundedCollection('schools'), snapshot => {
+            applyPage('schools', snapshot, setSchoolNotes);
+          }, handleError('schools')),
+        );
+      } catch (error) {
+        if (active) handleError('portal data')(error);
+      }
+    };
+    subscribe();
 
     return () => {
-      unsubSem();
-      unsubCon();
-      unsubActivities();
-      unsubSchoolNotes();
+      active = false;
+      unsubscribers.forEach(unsubscribe => unsubscribe());
     };
   }, [approved, authReady, collectionLimits, user]);
 
@@ -245,26 +268,43 @@ function App() {
       return undefined;
     }
 
-    return onSnapshot(
-      query(collection(db, 'users'), orderBy(documentId()), limitResults(userProfileLimit + 1)),
-      snapshot => {
-        setUserProfilesError('');
-        setHasMoreUserProfiles(snapshot.docs.length > userProfileLimit);
-        setUserProfiles(snapshot.docs.slice(0, userProfileLimit).map(item => {
-          const profile = item.data();
-          return {
-            id: item.id,
-            ...profile,
-            role: validRole(profile.role),
-            approved: profile.approved === true || typeof profile.approved !== 'boolean',
-          };
-        }).sort((first, second) => Number(first.approved) - Number(second.approved) || String(first.name || first.email || '').localeCompare(String(second.name || second.email || ''))));
-      },
-      error => {
-        console.error('Unable to load user access profiles:', error);
+    let active = true;
+    let unsubscribe;
+    const subscribe = async () => {
+      try {
+        const { db, collection, documentId, limitResults, onSnapshot, orderBy, query } = await loadFirestore();
+        if (!active) return;
+        unsubscribe = onSnapshot(
+          query(collection(db, 'users'), orderBy(documentId()), limitResults(userProfileLimit + 1)),
+          snapshot => {
+            setUserProfilesError('');
+            setHasMoreUserProfiles(snapshot.docs.length > userProfileLimit);
+            setUserProfiles(snapshot.docs.slice(0, userProfileLimit).map(item => {
+              const profile = item.data();
+              return {
+                id: item.id,
+                ...profile,
+                role: validRole(profile.role),
+                approved: profile.approved === true || typeof profile.approved !== 'boolean',
+              };
+            }).sort((first, second) => Number(first.approved) - Number(second.approved) || String(first.name || first.email || '').localeCompare(String(second.name || second.email || ''))));
+          },
+          error => {
+            console.error('Unable to load user access profiles:', error);
+            setUserProfilesError('User access records could not be loaded.');
+          },
+        );
+      } catch (error) {
+        if (!active) return;
+        console.error('Unable to initialize user access profiles:', error);
         setUserProfilesError('User access records could not be loaded.');
-      },
-    );
+      }
+    };
+    subscribe();
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
   }, [approved, authReady, role, user, userProfileLimit]);
 
   const loadMoreData = useCallback(() => {

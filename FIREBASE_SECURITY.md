@@ -38,6 +38,22 @@ User access, removal, and role-change events are written to the separate
 reading or writing that collection; Co-Admins are also excluded from every
 user-management collection and the Admin control route.
 
+## Operational data validation
+
+Editor, Co-Admin, and Admin permissions do not allow arbitrary documents.
+Firestore Rules validate seminar, school, contact, and audit writes before they
+reach the database. The rules enforce allowed field names, required fields,
+types, bounded text, server-generated update timestamps, valid workflow
+statuses, date/time formats, non-negative participant counts, HTTP(S) links,
+the standard `071 234 5678` phone format, and an author UID that must match the
+signed-in user.
+
+Nested contact people and seminar outcome data are also validated. A school may
+store up to five contact people; an outcome may store up to five photo links and
+five follow-up tasks. Existing legacy values can remain unchanged while a
+record is linked or renamed, but a client cannot introduce another legacy value
+or malformed replacement.
+
 ## Publish the rules
 
 The checked-in configuration targets the Firebase project
@@ -71,6 +87,7 @@ npm run test:rules
 
 The emulator tests cover signed-out users, automatically active new viewers,
 blocked and removed accounts, all four roles, self-unblocking and promotion
-attempts, administrator self-lockout, and append-only activity history.
+attempts, administrator self-lockout, validated operational schemas, legacy
+linking compatibility, and append-only activity history.
 Security Rules protect the database itself; hiding buttons in the user interface
 is only a usability measure.

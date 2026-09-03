@@ -1,16 +1,53 @@
-# React + Vite
+# Seminar Management Portal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The Horana Sub Group portal manages seminar schedules, school profiles,
+contacts, reports, and role-based access. It is a React/Vite application backed
+by Firebase Authentication and Cloud Firestore.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Use Node.js 24 or newer:
 
-## React Compiler
+```sh
+npm ci
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The local portal is available at
+`http://localhost:5173/Seminar-management-portal/`.
 
-## Expanding the ESLint configuration
+## Verification
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```sh
+npm run lint
+npm test
+npm run test:ui
+npm run test:rules
+npm run build
+```
+
+The Firestore Rules suite starts the local emulator and requires Java 21 or
+newer. See [FIREBASE_SECURITY.md](./FIREBASE_SECURITY.md) for the access model
+and rules deployment instructions.
+
+## Automatic GitHub Pages deployment
+
+The workflow in `.github/workflows/deploy-pages.yml` runs on every push to
+`main`. It installs locked dependencies, runs linting and all test suites,
+builds the production site, and deploys `dist` only if every check passes. It
+can also be started manually from the repository's **Actions** tab.
+
+One repository setting is required: open **Settings → Pages → Build and
+deployment**, then set **Source** to **GitHub Actions**. The Vite base path is
+already configured for:
+
+```text
+https://laraweerarathna.github.io/Seminar-management-portal/
+```
+
+## Production bundle
+
+Portal pages use route-level lazy loading. Firebase Authentication remains in
+the public sign-in bundle, while the larger Firestore client is downloaded only
+after a user signs in. This keeps the first page load small and gives each tab
+its own cacheable JavaScript chunk.

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import Dashboard from '../../src/components/Dashboard';
 import { AppContext } from '../../src/context/AppContext';
 
-vi.mock('../../src/config/firebase', () => ({ db: {} }));
+vi.mock('../../src/config/firestore', () => ({ db: {} }));
 vi.mock('firebase/firestore', () => ({
   collection: vi.fn(),
   doc: vi.fn(() => ({ id: 'new-seminar-id' })),
